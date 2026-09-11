@@ -1,0 +1,54 @@
+Package: anchorCorrectR
+Type: Package
+Title: Anchor-Based Batch Correction for Gene Expression Data
+Version: 0.99.0
+Authors@R: c(
+    person("María", "Rivas-Torrubia",
+           email = "maria.rivas@genyo.es",
+           role = "aut"),
+    person("Ana", "Brescia-Zapata",
+           email = "ana.brescia@genyo.es",
+           role = "aut"),
+    person("Guillermo", "Barturen",
+           email = "gbarturen@ugr.es",
+           role = c("aut", "cre"))
+  )
+Description: Performs anchor-based batch correction of gene expression
+    matrices when replicate samples are observed across technical batches.
+    Location-shift correction supports mean or median centers, with additional
+    ridge and anchor-aware ComBat methods. Correction is computed on the log
+    scale and returned in the same scale as the input, with utilities for
+    assessment and quality control.
+License: GPL-3
+Encoding: UTF-8
+Depends: R (>= 4.3.0)
+Imports: stats, utils
+Suggests:
+    BiocStyle,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0),
+    glmnet,
+    ggplot2,
+    FNN,
+    cluster,
+    edgeR,
+    dplyr,
+    tibble,
+    magrittr,
+    scales,
+    vcfR,
+    tidyr,
+    patchwork,
+    foreach,
+    doParallel,
+    parallel,
+    ShortRead,
+    Matrix
+VignetteBuilder: knitr
+biocViews: Software, BatchEffect, Normalization, QualityControl, GeneExpression, RNASeq
+URL: https://github.com/gbarturen/anchorCorrectR
+BugReports: https://github.com/gbarturen/anchorCorrectR/issues
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+Config/testthat/edition: 3

@@ -1,0 +1,8 @@
+^\.git$
+^\.gitignore$
+^\.github$
+^\.Rproj\.user$
+^.*\.Rproj$
+^LICENSE$
+^inst/scripts$
+^man/figures$

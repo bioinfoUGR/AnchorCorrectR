@@ -1,0 +1,18 @@
+bibentry(
+  bibtype = "Manual",
+  title = "anchorCorrectR: Anchor-Based Batch Correction for Gene Expression Data",
+  author = c(
+    person("María", "Rivas-Torrubia"),
+    person("Ana", "Brescia-Zapata"),
+    person("Guillermo", "Barturen")
+  ),
+  year = "2026",
+  note = "R package version 0.99.0",
+  url = "https://github.com/gbarturen/anchorCorrectR",
+  textVersion = paste(
+    "Rivas-Torrubia M, Brescia-Zapata A, Barturen G (2026).",
+    "anchorCorrectR: Anchor-Based Batch Correction for Gene Expression Data.",
+    "R package version 0.99.0.",
+    "https://github.com/gbarturen/anchorCorrectR"
+  )
+)

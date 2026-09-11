@@ -1,0 +1,15 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.Rhistory$
+^\.RData$
+^\.Ruserdata$
+^\.DS_Store$
+^.*\.tar\.gz$
+^.*\.Rcheck$
+^docs$
+^pkgdown$
+^\.github$
+^vignettes/.*\.html$
+^vignettes/.*\.R$
+^Meta$
+^doc$

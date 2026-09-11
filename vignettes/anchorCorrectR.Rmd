@@ -1,0 +1,187 @@
+---
+title: "Introduction to anchorCorrectR"
+author:
+  - María Rivas-Torrubia
+  - Ana Brescia-Zapata
+  - Guillermo Barturen
+package: anchorCorrectR
+output:
+  BiocStyle::html_document:
+    toc: true
+    toc_depth: 2
+vignette: >
+  %\VignetteIndexEntry{Introduction to anchorCorrectR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6,
+  fig.height = 4
+)
+```
+
+# Introduction
+
+Technical batch effects are common in multi-batch RNA-seq and microarray
+studies. When the same biological samples (anchors) are profiled in more than
+one batch, those replicates provide a direct estimate of technical shift.
+
+**anchorCorrectR** uses such anchors to correct gene-expression matrices with:
+
+- **Location shift** (`method = "shift"`): mean- or median-based offsets
+- **Ridge regression** (`method = "ridge"`): regularized batch coefficients
+- **Anchor-aware ComBat** (`method = "combat"`): location/scale with empirical Bayes shrinkage
+
+Related Bioconductor / CRAN tools include `sva::ComBat`,
+`limma::removeBatchEffect`, and `batchelor`. Those methods typically estimate
+batch effects from all samples in a batch. anchorCorrectR instead estimates
+effects from cross-batch replicates, which is useful when biology and batch are
+partially confounded.
+
+# Installation
+
+```{r install, eval=FALSE}
+if (!requireNamespace("BiocManager", quietly = TRUE)) {
+  install.packages("BiocManager")
+}
+# After Bioconductor acceptance:
+# BiocManager::install("anchorCorrectR")
+
+# From GitHub during development:
+# BiocManager::install("gbarturen/anchorCorrectR")
+```
+
+```{r load}
+library(anchorCorrectR)
+```
+
+# Simulated multi-batch experiment
+
+```{r simulate}
+set.seed(123)
+n_genes <- 200
+n_per_batch <- 10
+n_batches <- 3
+
+sample_id <- factor(rep(seq_len(n_per_batch), times = n_batches))
+batch <- factor(rep(paste0("Batch", seq_len(n_batches)), each = n_per_batch))
+biology <- factor(rep(rep(c("GroupA", "GroupB"), each = n_per_batch / 2),
+                      times = n_batches))
+
+counts <- matrix(
+  rpois(n_genes * length(sample_id), lambda = 80),
+  nrow = n_genes,
+  dimnames = list(
+    paste0("Gene", seq_len(n_genes)),
+    paste0("S", seq_along(sample_id))
+  )
+)
+
+# Artificial multiplicative batch effects
+batch_mult <- c(Batch1 = 1.0, Batch2 = 1.7, Batch3 = 0.65)
+counts <- sweep(counts, 2, batch_mult[as.character(batch)], `*`)
+```
+
+# Location-shift correction
+
+```{r shift}
+corrected_mean <- anchor_correct(
+  counts, batch, sample_id,
+  method = "shift",
+  center = "mean",
+  input_type = "counts",
+  verbose = FALSE
+)
+
+corrected_median <- anchor_correct(
+  counts, batch, sample_id,
+  method = "shift",
+  center = "median",
+  input_type = "counts",
+  verbose = FALSE
+)
+
+dim(corrected_mean)
+```
+
+Use `center = "median"` when a few anchors may be unreliable. Optionally keep
+one batch unchanged with `ref_batch`.
+
+```{r ref-batch}
+corrected_ref <- anchor_correct(
+  counts, batch, sample_id,
+  method = "shift",
+  center = "mean",
+  ref_batch = "Batch1",
+  input_type = "counts",
+  verbose = FALSE
+)
+```
+
+# Anchor-aware ComBat
+
+```{r combat}
+corrected_combat <- anchor_correct(
+  counts, batch, sample_id,
+  method = "combat",
+  input_type = "counts",
+  verbose = FALSE
+)
+```
+
+# Assessing correction
+
+```{r assess}
+assessment <- assess_correction(
+  x_before = counts,
+  x_after = corrected_mean,
+  batch = batch,
+  biology = biology,
+  sample_id = sample_id,
+  input_type = "counts",
+  verbose = FALSE
+)
+print(assessment)
+```
+
+MDS before versus after correction:
+
+```{r mds, fig.cap="MDS of samples before and after shift correction."}
+plot_mds_before_after(
+  x_before = counts,
+  x_after = corrected_mean,
+  batch = batch,
+  biology = biology,
+  input_type = "counts"
+)
+```
+
+# Working with matrix inputs
+
+anchorCorrectR expects a numeric **genes × samples** matrix. For
+`SummarizedExperiment` / `SingleCellExperiment` objects, extract the assay and
+metadata columns, then correct:
+
+```{r se-pattern, eval=FALSE}
+# library(SummarizedExperiment)
+# se <- ...
+# corrected <- anchor_correct(
+#   assay(se, "counts"),
+#   batch = colData(se)$batch,
+#   sample_id = colData(se)$sample_id,
+#   method = "shift",
+#   center = "mean",
+#   input_type = "counts"
+# )
+# assay(se, "corrected") <- corrected
+```
+
+# Session info
+
+```{r sessionInfo}
+sessionInfo()
+```
