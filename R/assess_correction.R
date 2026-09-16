@@ -241,62 +241,6 @@ assess_correction <- function(
   pr$x  # samples x PCs
 }
 
-.compute_r2 <- function(y, design) {
-  fit <- stats::lm.fit(design, y)
-  pred <- fit$fitted.values
-  rss <- colSums((y - pred)^2, na.rm = TRUE)
-  tss <- colSums(scale(y, scale = FALSE)^2, na.rm = TRUE)
-  1 - rss / pmax(tss, 1e-8)
-}
-
-.per_gene_r2 <- function(Xlog, fac) {
-  fac <- as.factor(fac)
-  design <- stats::model.matrix(~ 0 + fac)
-  y <- t(Xlog)  # samples x genes
-  as.numeric(.compute_r2(y, design))
-}
-
-# R2 for continuous variables
-.per_gene_r2_continuous <- function(Xlog, cont_var) {
-  # For each gene: regress expression ~ continuous variable
-  r2_values <- apply(Xlog, 1, function(gene_expr) {
-    fit <- stats::lm(gene_expr ~ cont_var)
-    summary(fit)$r.squared
-  })
-  r2_values
-}
-
-.pc_r2 <- function(pcs, fac) {
-  fac <- as.factor(fac)
-  design <- stats::model.matrix(~ 0 + fac)
-  y <- as.matrix(pcs)  # samples x PCs
-  r2_pc <- .compute_r2(y, design)
-  w <- apply(y, 2, stats::var, na.rm = TRUE)
-  sum(r2_pc * w, na.rm = TRUE) / pmax(sum(w, na.rm = TRUE), 1e-8)
-}
-
-# PC R2 for continuous variables
-.pc_r2_continuous <- function(pcs, cont_var) {
-  # For each PC: regress PC ~ continuous variable
-  y <- as.matrix(pcs)
-  r2_pc <- apply(y, 2, function(pc) {
-    fit <- stats::lm(pc ~ cont_var)
-    summary(fit)$r.squared
-  })
-  w <- apply(y, 2, stats::var, na.rm = TRUE)
-  sum(r2_pc * w, na.rm = TRUE) / pmax(sum(w, na.rm = TRUE), 1e-8)
-}
-
-.silhouette_mean <- function(pcs, labels) {
-  labels <- as.factor(labels)
-  if (nlevels(labels) < 2) return(NA_real_)
-  d <- stats::dist(pcs)
-  cl <- as.integer(labels)
-  if (!requireNamespace("cluster", quietly = TRUE)) return(NA_real_)
-  sil <- cluster::silhouette(cl, dmatrix = as.matrix(d))
-  mean(sil[, "sil_width"], na.rm = TRUE)
-}
-
 .knn_jaccard <- function(pcs_before, pcs_after, k = 20) {
   if (!requireNamespace("FNN", quietly = TRUE)) {
     d1 <- as.matrix(stats::dist(pcs_before))
@@ -595,60 +539,6 @@ assess_correction <- function(
     n_clusters = n_clusters,
     labels_before = labels_before,
     labels_after = labels_after
-  )
-}
-
-#' Factor variance preservation
-#' Assesses how well biological variance is preserved after correction
-#' @keywords internal
-.factor_variance_preservation <- function(pcs_before, pcs_after, biology) {
-  if (is.null(biology)) {
-    return(list(
-      variance_preservation = NA_real_,
-      variance_before = NA_real_,
-      variance_after = NA_real_
-    ))
-  }
-  
-  # Calculate variance explained by biology factor on each PC
-  biology_r2_before <- numeric(ncol(pcs_before))
-  biology_r2_after <- numeric(ncol(pcs_after))
-  
-  pc_var_before <- apply(pcs_before, 2, stats::var, na.rm = TRUE)
-  pc_var_after <- apply(pcs_after, 2, stats::var, na.rm = TRUE)
-  
-  total_var_before <- sum(pc_var_before, na.rm = TRUE)
-  total_var_after <- sum(pc_var_after, na.rm = TRUE)
-  
-  weights_before <- pc_var_before / pmax(total_var_before, 1e-8)
-  weights_after <- pc_var_after / pmax(total_var_after, 1e-8)
-  
-  for (i in seq_len(ncol(pcs_before))) {
-    if (is.numeric(biology)) {
-      fit_before <- stats::lm(pcs_before[, i] ~ biology)
-      fit_after <- stats::lm(pcs_after[, i] ~ biology)
-    } else {
-      fit_before <- stats::lm(pcs_before[, i] ~ as.factor(biology))
-      fit_after <- stats::lm(pcs_after[, i] ~ as.factor(biology))
-    }
-    biology_r2_before[i] <- summary(fit_before)$r.squared
-    biology_r2_after[i] <- summary(fit_after)$r.squared
-  }
-  
-  variance_before <- sum(biology_r2_before * weights_before, na.rm = TRUE)
-  variance_after <- sum(biology_r2_after * weights_after, na.rm = TRUE)
-  
-  # Preservation ratio (how much variance is retained)
-  variance_preservation <- if (variance_before > 0) {
-    variance_after / variance_before
-  } else {
-    NA_real_
-  }
-  
-  list(
-    variance_preservation = variance_preservation,
-    variance_before = variance_before,
-    variance_after = variance_after
   )
 }
 

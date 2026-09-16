@@ -48,6 +48,7 @@ mds_samples <- function(x, input_type = c("auto","counts","log"),
 #' Plot MDS before vs after, side by side, colored by batch (optionally shaped by biology)
 #'
 #' Produces two panels (before/after) with identical axis limits so the layouts are comparable.
+#' Styling matches the QC utility plots (\code{theme_bw}, point size/alpha).
 #' If ggplot2 is available, returns a ggplot object with facet panels; otherwise, draws base R plots.
 #'
 #' @param x_before Matrix (genes x samples) before correction.
@@ -99,31 +100,53 @@ plot_mds_before_after <- function(x_before, x_after, batch, biology = NULL,
   if (same_limits) {
     xr <- range(mds$Dim1, na.rm = TRUE)
     yr <- range(mds$Dim2, na.rm = TRUE)
+    # small padding like typical QC scatter panels
+    pad_x <- diff(xr) * 0.04
+    pad_y <- diff(yr) * 0.04
+    if (!is.finite(pad_x) || pad_x == 0) pad_x <- 1
+    if (!is.finite(pad_y) || pad_y == 0) pad_y <- 1
+    xr <- xr + c(-pad_x, pad_x)
+    yr <- yr + c(-pad_y, pad_y)
   } else {
     xr <- yr <- NULL
   }
 
-  # ggplot2 path
+  # ggplot2 path — style aligned with detect_outliers_pca_mds / detect_sex_mismatch
   if (requireNamespace("ggplot2", quietly = TRUE)) {
-    ggplot2 <- asNamespace("ggplot2")
-    aes_map <- ggplot2$aes(x = .data$Dim1, y = .data$Dim2, color = .data$batch)
-    if (!is.null(biology)) {
-      aes_map <- ggplot2$aes(x = .data$Dim1, y = .data$Dim2, color = .data$batch, shape = .data$biology)
-    }
-    gg <- ggplot2$ggplot(mds, aes_map) +
-      ggplot2$geom_point(size = 2, alpha = 0.9) +
-      ggplot2$facet_grid(rows = NULL, cols = ggplot2$vars(state)) +  # side by side
-      ggplot2$labs(title = title,
-                   x = "MDS 1", y = "MDS 2", color = "Batch",
-                   shape = if (!is.null(biology)) "Biology" else NULL) +
-      ggplot2$theme_bw() +
-      ggplot2$theme(
-        panel.grid = ggplot2$element_blank(),
-        strip.text = ggplot2$element_text(face = "bold", size = 11),
-        plot.title = ggplot2$element_text(face = "bold", hjust = 0.5)
+    batch_cols <- .qc_style_palette(nlevels(batch))
+    names(batch_cols) <- levels(batch)
+
+    aes_map <- if (!is.null(biology)) {
+      ggplot2::aes(
+        x = .data$Dim1, y = .data$Dim2,
+        color = .data$batch, shape = .data$biology
       )
+    } else {
+      ggplot2::aes(x = .data$Dim1, y = .data$Dim2, color = .data$batch)
+    }
+
+    gg <- ggplot2::ggplot(mds, aes_map) +
+      ggplot2::geom_point(size = 2.5, alpha = 0.7) +
+      ggplot2::scale_color_manual(values = batch_cols, name = "Batch") +
+      ggplot2::facet_wrap(~ state, nrow = 1) +
+      ggplot2::labs(
+        title = title,
+        x = "MDS1", y = "MDS2",
+        shape = if (!is.null(biology)) "Biology" else NULL
+      ) +
+      # Match QC utilities (detect_outliers_pca_mds / detect_sex_mismatch)
+      ggplot2::theme_bw(base_size = 12) +
+      ggplot2::theme(
+        plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
+        legend.position = "right",
+        strip.background = ggplot2::element_rect(fill = "grey92", colour = "grey70"),
+        strip.text = ggplot2::element_text(face = "bold", size = 11)
+      )
+    if (!is.null(biology)) {
+      gg <- gg + ggplot2::scale_shape_discrete(name = "Biology")
+    }
     if (same_limits) {
-      gg <- gg + ggplot2$xlim(xr) + ggplot2$ylim(yr)
+      gg <- gg + ggplot2::coord_cartesian(xlim = xr, ylim = yr)
     }
     return(gg)
   }
@@ -131,7 +154,7 @@ plot_mds_before_after <- function(x_before, x_after, batch, biology = NULL,
   # Base R fallback: side-by-side panels with shared limits
   oldpar <- graphics::par(no.readonly = TRUE)
   on.exit(graphics::par(oldpar))
-  graphics::par(mfrow = c(1,2))
+  graphics::par(mfrow = c(1, 2))
 
   if (is.null(xr)) {
     xr_b <- range(mds_b$Dim1, na.rm = TRUE)
@@ -143,23 +166,50 @@ plot_mds_before_after <- function(x_before, x_after, batch, biology = NULL,
     yr_b <- yr_a <- yr
   }
 
+  batch_cols <- .qc_style_palette(nlevels(batch))
+
   # before
-  cols_b <- as.integer(as.factor(mds_b$batch))
-  pch_b <- if (!is.null(biology)) as.integer(as.factor(mds_b$biology)) else 16
-  graphics::plot(mds_b$Dim1, mds_b$Dim2, xlim = xr_b, ylim = yr_b,
-                 col = cols_b, pch = pch_b, main = "MDS - before",
-                 xlab = "MDS 1", ylab = "MDS 2")
-  graphics::legend("topright", legend = levels(batch),
-                   col = seq_along(levels(batch)), pch = 16, title = "Batch", cex = 0.8)
+  cols_b <- batch_cols[as.integer(mds_b$batch)]
+  pch_b <- if (!is.null(biology)) as.integer(mds_b$biology) else 16
+  graphics::plot(
+    mds_b$Dim1, mds_b$Dim2, xlim = xr_b, ylim = yr_b,
+    col = cols_b, pch = pch_b, main = "before",
+    xlab = "MDS1", ylab = "MDS2"
+  )
+  graphics::legend(
+    "topright", legend = levels(batch),
+    col = batch_cols, pch = 16, title = "Batch", cex = 0.8
+  )
 
   # after
-  cols_a <- as.integer(as.factor(mds_a$batch))
-  pch_a <- if (!is.null(biology)) as.integer(as.factor(mds_a$biology)) else 16
-  graphics::plot(mds_a$Dim1, mds_a$Dim2, xlim = xr_a, ylim = yr_a,
-                 col = cols_a, pch = pch_a, main = "MDS - after",
-                 xlab = "MDS 1", ylab = "MDS 2")
-  graphics::legend("topright", legend = levels(batch),
-                   col = seq_along(levels(batch)), pch = 16, title = "Batch", cex = 0.8)
+  cols_a <- batch_cols[as.integer(mds_a$batch)]
+  pch_a <- if (!is.null(biology)) as.integer(mds_a$biology) else 16
+  graphics::plot(
+    mds_a$Dim1, mds_a$Dim2, xlim = xr_a, ylim = yr_a,
+    col = cols_a, pch = pch_a, main = "after",
+    xlab = "MDS1", ylab = "MDS2"
+  )
+  graphics::legend(
+    "topright", legend = levels(batch),
+    col = batch_cols, pch = 16, title = "Batch", cex = 0.8
+  )
 
   invisible(NULL)
+}
+
+#' Discrete palette matching QC utility plots (skyblue4 / tomato3 first)
+#' @keywords internal
+.qc_style_palette <- function(n) {
+  base <- c(
+    "skyblue4", "tomato3", "darkseagreen4", "orchid4",
+    "goldenrod3", "steelblue3", "darkorange3", "slateblue3"
+  )
+  n <- as.integer(n)
+  if (n <= 0) return(character(0))
+  if (n <= length(base)) return(base[seq_len(n)])
+  extra <- grDevices::hcl(
+    h = seq(15, 375, length.out = n - length(base) + 1)[seq_len(n - length(base))],
+    c = 70, l = 45
+  )
+  c(base, extra)
 }

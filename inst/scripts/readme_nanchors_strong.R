@@ -226,22 +226,24 @@ p_trend <- ggplot(long, aes(x = n_replicates, y = value, color = method)) +
   facet_wrap(~ metric, scales = "free_y", nrow = 1) +
   scale_x_continuous(breaks = n_vec) +
   labs(
-    title = "Strong imbalance: effect of number of replicate IDRs",
+    title = "Strong imbalance: effect of number of technical replicates",
     subtitle = "n = 2 is 1C+1D (not 2C+2D); each IDR is still on both platforms",
-    x = "Number of replicate IDRs (C+D)",
+    x = "Number of technical replicates (C+D IDRs)",
     y = NULL,
     color = "Method"
   ) +
-  theme_bw(base_size = 11) +
+  theme_bw(base_size = 12) +
   theme(
     legend.position = "bottom",
     plot.title = element_text(face = "bold", hjust = 0.5),
-    plot.subtitle = element_text(hjust = 0.5)
+    plot.subtitle = element_text(hjust = 0.5),
+    strip.background = element_rect(fill = "grey92", colour = "grey70"),
+    strip.text = element_text(face = "bold", size = 11)
   )
 
 ggsave(
   filename = file.path(out_dir, "nreplicates_strong_trends.png"),
-  plot = p_trend, width = 10, height = 4.0, dpi = 150
+  plot = p_trend, width = 10, height = 4.2, dpi = 150
 )
 
 # Combined ComBat vs ComBat_seq at n=2 with overall + panel titles

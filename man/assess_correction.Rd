@@ -75,5 +75,5 @@ batches, the function builds per-batch mean expression (log1p-CPM) across sample
 then for each unordered pair of batches computes \code{sqrt(mean_g (a_g - b_g)^2)} over genes.
 Pairwise RMSEs are averaged within each anchor, then those anchor-level values are averaged
 across anchors so each anchor counts equally. Values are on the log-expression scale and are
-not bounded to a small interval—substantial batch effects can yield RMSE of 1 or larger.
+not bounded to a small interval-substantial batch effects can yield RMSE of 1 or larger.
 }

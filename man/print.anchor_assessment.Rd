@@ -8,8 +8,9 @@
 }
 \arguments{
 \item{x}{Object to print.}
-\item{...}{Additional arguments passed to methods.}
+
+\item{...}{Additional arguments (unused).}
 }
 \description{
-Print method for anchor_assessment objects.
+Print method for anchor_assessment
 }

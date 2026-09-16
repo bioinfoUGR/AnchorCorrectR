@@ -40,5 +40,6 @@ A ggplot object (if ggplot2 is installed) or \code{NULL} (after drawing base plo
 }
 \description{
 Produces two panels (before/after) with identical axis limits so the layouts are comparable.
+Styling matches the QC utility plots (\code{theme_bw}, point size/alpha).
 If ggplot2 is available, returns a ggplot object with facet panels; otherwise, draws base R plots.
 }

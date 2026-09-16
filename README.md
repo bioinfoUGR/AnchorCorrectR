@@ -28,7 +28,7 @@ remotes::install_github("bioinfoUGR/AnchorCorrectR")
 
 **Imports:** `stats`, `utils`
 
-**Suggested:** `glmnet`, `ggplot2`, `FNN`, `cluster`, `edgeR`, `dplyr`,
+**Suggested:** `glmnet`, `ggplot2`, `FNN`, `edgeR`, `dplyr`,
 `tibble`, `tidyr`, `patchwork`, `scales`, `vcfR`, `foreach`, `doParallel`,
 `parallel`, `ShortRead`, `Matrix`, `sva`, `BiocStyle`, `knitr`, `rmarkdown`,
 `testthat`
@@ -184,6 +184,8 @@ plot_mds_before_after(counts_use, out_shift, batch, biology, input_type = "count
 ### MDS (color = platform, shape = Sample)
 
 Each figure has an overall title and **before** / **after** panel titles.
+Plot styling matches the extended QC utilities (`theme_bw`, light grid,
+`skyblue4`/`tomato3`-style discrete colors, point size 2.5 / alpha 0.7).
 
 **Balanced**
 
@@ -264,7 +266,7 @@ keep_idr <- c(c_ids[seq_len(n_c)], d_ids[seq_len(n_d)])  # n=2 -> 1C+1D
 | 10 (5C+5D) | ComBat_seq | 0.127 → **0.011** | 0.704 → 0.660 | 0.576 → 0.309 | 0.910 | 0.968 |
 
 <p align="center">
-  <img src="man/figures/readme/nreplicates_strong_trends.png" alt="Trends vs number of replicate IDRs" width="900"/>
+  <img src="man/figures/readme/nreplicates_strong_trends.png" alt="Strong imbalance: effect of number of technical replicates" width="900"/>
 </p>
 
 At **n = 2 (1C+1D)** ridge is weak and `ComBat_seq` collapses biology
@@ -309,8 +311,11 @@ data in the input scale. Optional `ref_batch` leaves one batch unchanged.
 ## Extended utilities for QC
 
 Beyond batch correction, the package ships helpers for common RNA-seq quality
-checks and for building synthetic replicate libraries. These are optional
-(Suggested packages) and independent of `anchor_correct()`.
+checks and for building synthetic replicate libraries. These are independent of `anchor_correct()`.
+
+Figures below are **real outputs** from the **PRECISESADS** project cohort
+(large multi-center autoimmune RNA-seq study), shown as illustrative QC
+examples, not from the bundled SEQC toy data.
 
 ### Outlier samples (`detect_outliers_pca_mds`)
 
@@ -330,10 +335,25 @@ outliers$pc_plot
 outliers$mds_plot
 ```
 
+**PRECISESADS example** (`n_sd = 5`): most libraries form a tight cloud of
+**Passed** samples; a minority are flagged as **Outlier**. In PCA, extreme
+points sit far on PC1/PC2, but a few red points can still fall near the center,
+ they fail on higher PCs used by the iterative rule, not only on the 2D view.
+In MDS, outliers are pulled far along MDS1/MDS2 (including very high MDS2),
+which often flags globally atypical expression profiles (failed libraries,
+extreme composition, or strong technical artefacts).
+
+<p align="center">
+  <img src="man/figures/readme/qc_examples/pca_outliers_precisesads.jpg" alt="PRECISESADS PCA outlier detection" width="520"/>
+</p>
+<p align="center">
+  <img src="man/figures/readme/qc_examples/mds_outliers_precisesads.jpg" alt="PRECISESADS MDS outlier detection" width="520"/>
+</p>
+
 ### Sex mismatch / contamination (`detect_sex_mismatch`)
 
 Compares reported sex in metadata to expression of **XIST** and a panel of
-**chrY** genes (`default_chrY_genes()`). Samples are placed in an XIST–chrY
+**chrY** genes (`default_chrY_genes`). Samples are placed in an XIST–chrY
 plane; a diagonal “contamination zone” (angle estimated or fixed) separates
 clean male/female calls from likely swaps or mixed libraries.
 
@@ -344,16 +364,29 @@ Needs **edgeR**, **dplyr**, and **ggplot2**.
 sex_qc <- detect_sex_mismatch(
   counts,
   metadata = data.frame(sample_id = colnames(counts), sex = reported_sex),
-  chry_genes = default_chrY_genes()
+  chry_genes = default_chrY_genes
 )
 table(sex_qc$status_table$status)
 sex_qc$plot
 ```
 
+**PRECISESADS example:** clean **males** sit on the chrY axis (high Y, low
+XIST) and clean **females** on the XIST axis (high XIST, low Y), both
+**Passed** (blue). The yellow wedge is the contamination zone: samples with
+intermediate XIST and chrY signal are **Likely contaminated** (orange) or
+**Contaminated and sex mismatch** (purple). Points that land on the “wrong”
+axis relative to reported sex are **Sex mismatch** (red), classic label swaps
+or mixed tubes. In a multi-center cohort like PRECISESADS this screen is a
+fast sanity check before any biology or batch analysis.
+
+<p align="center">
+  <img src="man/figures/readme/qc_examples/sex_mismatch_precisesads.jpg" alt="PRECISESADS sex mismatch and contamination" width="640"/>
+</p>
+
 ### RNA–DNA genotype concordance (`vcf_compare_fast`)
 
 Pairwise comparison of **RNA-seq VCFs** against **DNA/genotype VCFs** to catch
-sample swaps and mislabeling. For each RNA–DNA pair it counts shared vs unique
+sample swaps and mislabeling. For each RNA-DNA pair it counts shared vs unique
 variants, optionally corrects REF/ALT swaps, and classifies pairs with a
 shared-score threshold. Can run in parallel (`n.cores`).
 
@@ -371,6 +404,19 @@ vcf_qc <- vcf_compare_fast(
 vcf_qc$summary
 vcf_qc$plot
 ```
+
+**PRECISESADS example** (threshold ≈ 0.6): left panels show per-RNA-sample SNP
+depth and concordance scores against DNA references (boxplots + best/matching
+IDs). Green points are correct same-ID matches above the threshold; pink
+highlights a best match to a **different** DNA ID (possible swap). The pie
+chart summarizes the cohort: most samples **Pass – High concordance**, with
+non-trivial fractions of **No matching DNA sample**, low concordance, or
+multiple matches, typical of a large clinical study where genotype coverage
+is incomplete and occasional mislabels occur.
+
+<p align="center">
+  <img src="man/figures/readme/qc_examples/rna_dna_concordance_precisesads.jpg" alt="PRECISESADS RNA-DNA concordance" width="820"/>
+</p>
 
 ### Bootstrap FASTQ replicates (`generate_bootstrap_fastq`)
 
