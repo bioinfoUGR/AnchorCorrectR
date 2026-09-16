@@ -201,14 +201,14 @@ correct_combat_anchor <- function(
     }
     
     if (length(residuals_list) > 0) {
-      # Combine residuals and compute variance
+      # Combine residuals and compute variance (ComBat delta is variance-scale)
       all_res <- do.call(cbind, residuals_list)
       delta_gb[, b] <- apply(all_res, 1, function(r) {
         r_finite <- r[is.finite(r)]
         if (length(r_finite) < 2) return(1)
         var_r <- stats::var(r_finite, na.rm = TRUE)
         if (!is.finite(var_r) || var_r <= 0) return(1)
-        sqrt(var_r)
+        var_r
       })
     } else {
       # Fallback: use variance of all samples in batch (on STANDARDIZED data)
@@ -218,7 +218,7 @@ correct_combat_anchor <- function(
         if (length(r_finite) < 2) return(1)
         var_r <- stats::var(r_finite, na.rm = TRUE)
         if (!is.finite(var_r) || var_r <= 0) return(1)
-        sqrt(var_r)
+        var_r
       })
     }
   }
@@ -271,7 +271,7 @@ correct_combat_anchor <- function(
       if (!is.finite(delta_gj) || delta_gj <= 0) delta_gj <- 1
       
       # ComBat correction on standardized data: (s_data - gamma*) / sqrt(delta*)
-      # Note: delta_star is already on variance scale, so we use sqrt
+      # delta* is variance-scale (matches classical ComBat)
       bayesdata[g, cols] <- (bayesdata[g, cols] - gamma_gj) / sqrt(pmax(delta_gj, 1e-8))
     }
   }
@@ -305,22 +305,23 @@ correct_combat_anchor <- function(
 # ---- Empirical Bayes shrinkage functions ----
 
 #' Empirical Bayes shrinkage for location parameters (gamma)
+#'
+#' Normal-normal EB with prior mean 0. Posterior mean is
+#' \code{weight_data * gamma}, where
+#' \code{weight_data = prior_var / (prior_var + sampling_var)}.
+#' Sampling variance is calibrated as \code{prior_var / n_anchors} so the
+#' posterior keeps about \code{n/(n+1)} of the raw estimate (more anchors =>
+#' less shrinkage).
+#'
 #' @keywords internal
 .ebayes_shrink_location <- function(gamma_gb, n_anchors_gb, verbose = TRUE) {
-  G <- nrow(gamma_gb)
-  n_batches <- ncol(gamma_gb)
-  
-  # Estimate hyperparameters from data
-  # Prior mean: assume zero (centered)
-  # Prior variance: estimate from data
-  
-  # For each batch, estimate prior variance from genes
   gamma_star <- gamma_gb
-  
-  for (j in 1:n_batches) {
+  n_batches <- ncol(gamma_gb)
+
+  for (j in seq_len(n_batches)) {
     gamma_j <- gamma_gb[, j]
     n_j <- n_anchors_gb[, j]
-    
+
     # Only shrink genes with sufficient anchor support
     has_support <- n_j >= 2
     if (sum(has_support) < 10) {
@@ -330,48 +331,44 @@ correct_combat_anchor <- function(
       }
       next
     }
-    
-    # Estimate prior variance from genes with support
+
+    # Prior variance from genes with support (prior mean = 0 after centering)
     gamma_supported <- gamma_j[has_support]
     prior_var <- stats::var(gamma_supported, na.rm = TRUE)
-    
     if (!is.finite(prior_var) || prior_var <= 0) {
       prior_var <- 1
     }
-    
-    # Estimate sampling variance for each gene (inverse of number of anchors)
-    # More anchors = lower sampling variance = less shrinkage
-    sampling_var <- 1 / pmax(n_j, 1)
-    sampling_var[!has_support] <- Inf  # Don't shrink genes without support
-    
-    # Empirical Bayes estimate: weighted average of prior (0) and data
-    # Shrinkage factor: prior_var / (prior_var + sampling_var)
-    shrinkage <- prior_var / (prior_var + sampling_var)
-    shrinkage[!is.finite(shrinkage)] <- 0
-    
-    # Shrink toward zero (centered)
-    gamma_star[, j] <- gamma_j * (1 - shrinkage)
+
+    # Calibrate sampling variance on the same scale as prior_var.
+    # sampling_var = prior_var / n  => weight_data = n / (n + 1)
+    sampling_var <- prior_var / pmax(n_j, 1)
+    sampling_var[!has_support] <- Inf
+
+    weight_data <- prior_var / (prior_var + sampling_var)
+    weight_data[!is.finite(weight_data)] <- 0
+
+    gamma_star[, j] <- gamma_j * weight_data
   }
-  
+
   gamma_star
 }
 
-#' Empirical Bayes shrinkage for scale parameters (delta)
+#' Empirical Bayes shrinkage for scale parameters (delta, variance-scale)
+#'
+#' Shrinks \code{log(delta)} toward the cross-gene prior mean. Posterior mean is
+#' \code{weight_data * log(delta) + (1 - weight_data) * prior_mean}, with
+#' sampling variance calibrated as \code{prior_var / n_anchors}.
+#'
 #' @keywords internal
 .ebayes_shrink_scale <- function(delta_gb, n_anchors_gb, verbose = TRUE) {
-  G <- nrow(delta_gb)
-  n_batches <- ncol(delta_gb)
-  
-  # Work on log scale for scale parameters
   log_delta_gb <- log(pmax(delta_gb, 1e-6))
-  
   delta_star <- delta_gb
-  
-  for (j in 1:n_batches) {
+  n_batches <- ncol(delta_gb)
+
+  for (j in seq_len(n_batches)) {
     log_delta_j <- log_delta_gb[, j]
     n_j <- n_anchors_gb[, j]
-    
-    # Only shrink genes with sufficient anchor support
+
     has_support <- n_j >= 2
     if (sum(has_support) < 10) {
       if (verbose && j == 1) {
@@ -379,31 +376,26 @@ correct_combat_anchor <- function(
       }
       next
     }
-    
-    # Estimate prior mean and variance on log scale
+
     log_delta_supported <- log_delta_j[has_support]
     prior_mean <- mean(log_delta_supported, na.rm = TRUE)
     prior_var <- stats::var(log_delta_supported, na.rm = TRUE)
-    
+
     if (!is.finite(prior_mean)) prior_mean <- 0
     if (!is.finite(prior_var) || prior_var <= 0) prior_var <- 1
-    
-    # Sampling variance (inverse of number of anchors)
-    sampling_var <- 1 / pmax(n_j, 1)
+
+    sampling_var <- prior_var / pmax(n_j, 1)
     sampling_var[!has_support] <- Inf
-    
-    # Empirical Bayes on log scale
-    shrinkage <- prior_var / (prior_var + sampling_var)
-    shrinkage[!is.finite(shrinkage)] <- 0
-    
-    # Shrink toward prior mean on log scale
-    log_delta_star <- log_delta_j * (1 - shrinkage) + prior_mean * shrinkage
-    
-    # Transform back
+
+    weight_data <- prior_var / (prior_var + sampling_var)
+    weight_data[!is.finite(weight_data)] <- 0
+
+    log_delta_star <- log_delta_j * weight_data + prior_mean * (1 - weight_data)
+
     delta_star[, j] <- exp(log_delta_star)
-    delta_star[!has_support, j] <- delta_gb[!has_support, j]  # Keep raw for unsupported
+    delta_star[!has_support, j] <- delta_gb[!has_support, j]
   }
-  
+
   delta_star
 }
 

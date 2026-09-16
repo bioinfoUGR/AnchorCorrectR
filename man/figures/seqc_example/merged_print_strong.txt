@@ -1,0 +1,123 @@
+===============================================================================
+  anchorCorrectR: Merged Batch Correction Assessment
+===============================================================================
+
+Number of runs merged: 3
+Run names: shift, ridge, combat
+Biology variable type: multi_category
+
+===============================================================================
+  COMPREHENSIVE SUMMARY WITH INTERPRETATIONS
+===============================================================================
+
+----------------------------------------------------------------------------
+  BATCH REMOVAL
+----------------------------------------------------------------------------
+
+  * PVCA Batch Variance
+    Interpretation: Lower after = better batch removal. Negative delta = improvement.
+    Better direction: lower
+    Values:
+      shift          : before=0.177, after=0.029 (delta=-0.148)
+      ridge          : before=0.177, after=0.044 (delta=-0.133)
+      combat         : before=0.177, after=0.035 (delta=-0.142)
+
+----------------------------------------------------------------------------
+  BIOLOGICAL PRESERVATION
+----------------------------------------------------------------------------
+
+  * PVCA Biology Variance
+    Interpretation: Higher after = better biology preservation. Positive delta = improvement.
+    Better direction: higher
+    Values:
+      shift          : before=0.693, after=0.783 (delta=0.091)
+      ridge          : before=0.693, after=0.775 (delta=0.082)
+      combat         : before=0.693, after=0.780 (delta=0.088)
+
+  * Biology Concordance (F-stat correlation)
+    Interpretation: Higher = better preservation of group differences
+    Better direction: higher
+    Values:
+      shift          : 0.939
+      ridge          : 0.957
+      combat         : 0.949
+
+  * Biology Concordance (eta2 correlation)
+    Interpretation: Higher = better preservation of effect sizes
+    Better direction: higher
+    Values:
+      shift          : 0.939
+      ridge          : 0.957
+      combat         : 0.949
+
+----------------------------------------------------------------------------
+  CLUSTERING STRUCTURE
+----------------------------------------------------------------------------
+
+  * Adjusted Rand Index (ARI)
+    Interpretation: Higher = better preservation of clustering structure (range: -1 to 1, 1 = perfect match)
+    Better direction: higher
+    Values:
+      shift          : 1.000 (n_clusters=3)
+      ridge          : 1.000 (n_clusters=3)
+      combat         : 1.000 (n_clusters=3)
+
+  * Cluster Compactness Ratio
+    Interpretation: Lower = tighter clusters. Small delta = preserved compactness.
+    Better direction: lower
+    Values:
+      shift          : before=0.292, after=0.305 (delta=0.014)
+      ridge          : before=0.292, after=0.299 (delta=0.007)
+      combat         : before=0.292, after=0.299 (delta=0.007)
+
+  * Cluster Separation Ratio
+    Interpretation: Higher = better separated clusters. Small delta = preserved separation.
+    Better direction: higher
+    Values:
+      shift          : before=3.428, after=3.275 (delta=-0.153)
+      ridge          : before=3.428, after=3.349 (delta=-0.079)
+      combat         : before=3.428, after=3.343 (delta=-0.086)
+
+----------------------------------------------------------------------------
+  SAMPLE INFORMATION
+----------------------------------------------------------------------------
+
+  * Samples Used
+    Interpretation: Number of unique samples used for metrics
+    Better direction: N/A
+    Values:
+      shift          : 20
+      ridge          : 20
+      combat         : 20
+
+  * Samples Excluded
+    Interpretation: Number of replicated samples excluded
+    Better direction: N/A
+    Values:
+      shift          : 10
+      ridge          : 10
+      combat         : 10
+
+===============================================================================
+  END OF SUMMARY
+===============================================================================
+
+===============================================================================
+  CONSOLIDATED RESULTS TABLE (All Metrics)
+===============================================================================
+                          Metric    BEFORE       shift       ridge       combat
+                 rmse_replicates 0.5938549  0.28896521  0.34533706  0.297527951
+             pvca_batch_variance 0.1767128  0.02861307  0.04379361  0.035102796
+       pvca_batch_variance_delta        NA -0.14809973 -0.13291919 -0.141610006
+           pvca_biology_variance 0.6925336  0.78346391  0.77463250  0.780427809
+     pvca_biology_variance_delta        NA  0.09093030  0.08209889  0.087894198
+                     knn_jaccard        NA  0.94583333  0.95476190  0.954761905
+                     hvg_overlap        NA  0.97628458  0.97726149  0.977261493
+             adjusted_rand_index        NA  1.00000000  1.00000000  1.000000000
+             cluster_compactness 0.2917016  0.30534867  0.29855517  0.299176635
+       cluster_compactness_delta        NA  0.01364704  0.00685354  0.007475004
+              cluster_separation 3.4281605  3.27494471  3.34946469  3.342507013
+        cluster_separation_delta        NA -0.15321576 -0.07869579 -0.085653462
+      biology_f_stat_correlation        NA  0.93946139  0.95738658  0.949208619
+ biology_eta_squared_correlation        NA  0.93946139  0.95738658  0.949208619
+

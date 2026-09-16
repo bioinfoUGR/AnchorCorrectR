@@ -44,11 +44,12 @@ Suggests:
     doParallel,
     parallel,
     ShortRead,
-    Matrix
+    Matrix,
+    sva
 VignetteBuilder: knitr
 biocViews: Software, BatchEffect, Normalization, QualityControl, GeneExpression, RNASeq
-URL: https://github.com/gbarturen/anchorCorrectR
-BugReports: https://github.com/gbarturen/anchorCorrectR/issues
+URL: https://github.com/bioinfoUGR/AnchorCorrectR
+BugReports: https://github.com/bioinfoUGR/AnchorCorrectR/issues
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Config/testthat/edition: 3

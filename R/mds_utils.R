@@ -58,13 +58,15 @@ mds_samples <- function(x, input_type = c("auto","counts","log"),
 #' @param distance One of \code{c("euclidean","1-corr")}.
 #' @param k Integer, MDS dimensions to compute (2 recommended for plotting).
 #' @param same_limits Logical; enforce the same x/y limits across both panels (default TRUE).
+#' @param title Overall plot title (default \code{"MDS before vs after"}).
 #'
 #' @return A ggplot object (if ggplot2 is installed) or \code{NULL} (after drawing base plots).
 #' @export
 plot_mds_before_after <- function(x_before, x_after, batch, biology = NULL,
                                   input_type = c("auto","counts","log"),
                                   distance = c("euclidean","1-corr"), k = 2,
-                                  same_limits = TRUE) {
+                                  same_limits = TRUE,
+                                  title = "MDS before vs after") {
   input_type <- match.arg(input_type)
   distance <- match.arg(distance)
   stopifnot(ncol(x_before) == ncol(x_after))
@@ -111,11 +113,15 @@ plot_mds_before_after <- function(x_before, x_after, batch, biology = NULL,
     gg <- ggplot2$ggplot(mds, aes_map) +
       ggplot2$geom_point(size = 2, alpha = 0.9) +
       ggplot2$facet_grid(rows = NULL, cols = ggplot2$vars(state)) +  # side by side
-      ggplot2$labs(title = "MDS before vs after",
+      ggplot2$labs(title = title,
                    x = "MDS 1", y = "MDS 2", color = "Batch",
                    shape = if (!is.null(biology)) "Biology" else NULL) +
       ggplot2$theme_bw() +
-      ggplot2$theme(panel.grid = ggplot2$element_blank())
+      ggplot2$theme(
+        panel.grid = ggplot2$element_blank(),
+        strip.text = ggplot2$element_text(face = "bold", size = 11),
+        plot.title = ggplot2$element_text(face = "bold", hjust = 0.5)
+      )
     if (same_limits) {
       gg <- gg + ggplot2$xlim(xr) + ggplot2$ylim(yr)
     }

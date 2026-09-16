@@ -17,19 +17,20 @@
 }
 
 #' Fit ridge regression to estimate batch effects from anchor samples
-#' 
-#' Uses glmnet with alpha=0 (ridge penalty) to estimate per-gene batch effects.
-#' A common lambda is chosen via cross-validation on a random subset of genes,
-#' then applied to all genes for consistency.
-#' 
-#' Data are standardized (mean=0, variance=1 per gene) before fitting to ensure
-#' consistent lambda selection and balanced regularization across genes with
-#' different scales. Standardization parameters are stored and used during
-#' correction application.
-#' 
+#'
+#' Uses glmnet with alpha=0 (ridge penalty) to estimate per-gene batch effects
+#' **using only anchor observations** (sample IDs present in at least two
+#' batches). A common lambda is chosen via cross-validation on a random subset
+#' of genes, then applied to all genes for consistency.
+#'
+#' Data are standardized (mean=0, variance=1 per gene) on the full matrix before
+#' fitting so apply-time unstandardization matches all samples; the regression
+#' itself is restricted to anchor columns so non-anchor biology cannot leak into
+#' batch coefficients.
+#'
 #' @param Xlog numeric matrix (genes x samples) in log scale
 #' @param batch factor of batch labels
-#' @param sample_id factor of sample identifiers (anchors span multiple batches)
+#' @param sample_id factor of sample identifiers (IDs in >=2 batches are anchors)
 #' @param lambda optional pre-specified lambda; if NULL, estimated via CV
 #' @param seed random seed for gene sampling in CV
 #' @param n_genes_cv number of genes to use for lambda CV
@@ -40,6 +41,8 @@
 #'   - lambda: regularization parameter used
 #'   - gene_mean: vector of gene means (for unstandardization)
 #'   - gene_sd: vector of gene standard deviations (for unstandardization)
+#'   - n_anchors: number of anchor observations used for fitting
+#'   - anchor_ids: character vector of anchor sample IDs
 #' @export
 #' @examples
 #' \dontrun{
@@ -48,83 +51,110 @@
 #' Xlog <- matrix(rnorm(1000 * 30, mean = 5, sd = 2), nrow = 1000)
 #' batch <- factor(rep(c("A", "B", "C"), each = 10))
 #' sample_id <- factor(rep(1:10, 3))
-#' 
-#' # Fit ridge model
+#'
+#' # Fit ridge model (anchors only)
 #' fit <- fit_anchor_ridge(Xlog, batch, sample_id)
 #' print(dim(fit$beta))
 #' }
-fit_anchor_ridge <- function(Xlog, batch, sample_id, lambda = NULL, 
+fit_anchor_ridge <- function(Xlog, batch, sample_id, lambda = NULL,
                              seed = 12345, n_genes_cv = 1000, verbose = TRUE) {
   if (!requireNamespace("glmnet", quietly = TRUE)) {
     stop("glmnet package is required for ridge method. Install it with: install.packages('glmnet')")
   }
-  
+
   Xlog <- as.matrix(Xlog)
   storage.mode(Xlog) <- "double"
+  stopifnot(
+    "Number of columns in Xlog must match length of batch" = ncol(Xlog) == length(batch),
+    "Length of batch must match length of sample_id" = length(batch) == length(sample_id)
+  )
   batch <- droplevels(factor(batch))
-  
-  # One-hot encode batches
-  Xb <- stats::model.matrix(~ 0 + batch)
-  colnames(Xb) <- sub("^batch", "", colnames(Xb))
-  # Center columns so effects sum to zero across batches
-  Xb <- scale(Xb, center = TRUE, scale = FALSE)
+  sample_id <- droplevels(factor(sample_id))
+
+  # Restrict design/response to cross-batch anchors
+  anchor_info <- identify_anchors(batch, sample_id, min_batches = 2)
+  anchor_idx <- anchor_info$anchor_indices
+  if (!length(anchor_idx)) {
+    stop("No anchor observations available for ridge fitting.", call. = FALSE)
+  }
+  if (verbose) {
+    message(sprintf(
+      "Ridge: fitting on %d anchor observations (%d anchor IDs)",
+      length(anchor_idx),
+      length(anchor_info$anchor_ids)
+    ))
+    if (length(anchor_info$coverage$batches_without_anchors) > 0) {
+      warning(sprintf(
+        "Ridge: batches with no anchors (coefficients may be poorly estimated): %s",
+        paste(anchor_info$coverage$batches_without_anchors, collapse = ", ")
+      ), call. = FALSE)
+    }
+  }
+
+  # One-hot encode batches on the full cohort levels, then subset to anchors
+  Xb_all <- stats::model.matrix(~ 0 + batch)
+  colnames(Xb_all) <- sub("^batch", "", colnames(Xb_all))
+  # Center columns using full design so effects remain comparable across batches
+  Xb_all <- scale(Xb_all, center = TRUE, scale = FALSE)
+  Xb <- Xb_all[anchor_idx, , drop = FALSE]
 
   set.seed(seed)
   G <- nrow(Xlog)
-  
-  # Standardize data: mean=0, variance=1 per gene
-  # Compute gene means and standard deviations
+
+  # Standardize using full-matrix moments (apply uses the same parameters)
   gene_mean <- rowMeans(Xlog, na.rm = TRUE)
   gene_sd <- apply(Xlog, 1, function(r) {
     r_finite <- r[is.finite(r)]
     if (length(r_finite) < 2) return(1)
-    sd_r <- sd(r_finite, na.rm = TRUE)
+    sd_r <- stats::sd(r_finite, na.rm = TRUE)
     if (!is.finite(sd_r) || sd_r <= 0) return(1)
     sd_r
   })
-  
-  # Standardize: (X - mean) / sd
+
   Xlog_std <- sweep(Xlog, 1, gene_mean, "-")
   Xlog_std <- sweep(Xlog_std, 1, pmax(gene_sd, 1e-8), "/")
-  
-  # Replace any non-finite values with 0
   Xlog_std[!is.finite(Xlog_std)] <- 0
-  
+  Xlog_std_anchor <- Xlog_std[, anchor_idx, drop = FALSE]
+
   if (verbose) {
-    message("Ridge: standardized data (mean=0, variance=1 per gene)")
+    message("Ridge: standardized data (mean=0, variance=1 per gene); regression on anchors only")
   }
-  
-  # Choose lambda if not given via CV on gene subset (using STANDARDIZED data)
+
+  # Choose lambda via CV on gene subset (anchor columns only)
   if (is.null(lambda)) {
-    if (verbose) message("Ridge: estimating lambda via cross-validation...")
+    if (verbose) message("Ridge: estimating lambda via cross-validation on anchors...")
     n_cv <- min(G, n_genes_cv)
     idx <- sample.int(G, n_cv)
     lam_vals <- numeric(length(idx))
     for (k in seq_along(idx)) {
-      y <- Xlog_std[idx[k], ]
+      y <- Xlog_std_anchor[idx[k], ]
       fitcv <- tryCatch(
         glmnet::cv.glmnet(x = Xb, y = y, alpha = 0, intercept = TRUE),
         error = .ridge_stop_if_constant_response
       )
       lam_vals[k] <- fitcv$lambda.min
     }
-    lambda <- median(lam_vals, na.rm = TRUE)
-    if (verbose) message(sprintf("Ridge: selected lambda = %.4f (median from %d genes)", lambda, n_cv))
+    lambda <- stats::median(lam_vals, na.rm = TRUE)
+    if (verbose) {
+      message(sprintf(
+        "Ridge: selected lambda = %.4f (median from %d genes)",
+        lambda, n_cv
+      ))
+    }
   } else {
     if (verbose) message(sprintf("Ridge: using pre-specified lambda = %.4f", lambda))
   }
 
-  # Fit per-gene ridge at chosen lambda on STANDARDIZED data
-  if (verbose) message("Ridge: fitting per-gene models on standardized data...")
+  # Fit per-gene ridge at chosen lambda on anchor observations only
+  if (verbose) message("Ridge: fitting per-gene models on anchors...")
   beta <- matrix(0, nrow = G, ncol = ncol(Xb))
-  for (g in 1:G) {
-    y <- Xlog_std[g, ]
+  for (g in seq_len(G)) {
+    y <- Xlog_std_anchor[g, ]
     fitg <- tryCatch(
       glmnet::glmnet(x = Xb, y = y, alpha = 0, lambda = lambda, intercept = TRUE),
       error = .ridge_stop_if_constant_response
     )
     coefs <- as.matrix(stats::coef(fitg, s = lambda))
-    # Drop intercept; keep batch columns (match colnames in Xb)
     nm <- rownames(coefs)
     keep <- match(colnames(Xb), nm)
     beta[g, ] <- as.numeric(coefs[keep, , drop = TRUE])
@@ -137,7 +167,9 @@ fit_anchor_ridge <- function(Xlog, batch, sample_id, lambda = NULL,
     batches = colnames(Xb),
     lambda = lambda,
     gene_mean = gene_mean,
-    gene_sd = gene_sd
+    gene_sd = gene_sd,
+    n_anchors = length(anchor_idx),
+    anchor_ids = anchor_info$anchor_ids
   ), class = "anchor_ridge_fit")
 }
 
@@ -262,6 +294,13 @@ print.anchor_ridge_fit <- function(x, ...) {
   cat("== anchorCorrectR: Ridge regression fit ==\n")
   cat(sprintf("Genes: %d\n", nrow(x$beta)))
   cat(sprintf("Batches: %s\n", paste(x$batches, collapse = ", ")))
+  if (!is.null(x$n_anchors)) {
+    cat(sprintf(
+      "Anchors used for fit: %d observations (%d IDs)\n",
+      x$n_anchors,
+      length(x$anchor_ids)
+    ))
+  }
   cat(sprintf("Lambda: %.4f\n", x$lambda))
   cat("\nBatch effect summary (mean absolute coefficient):\n")
   mean_abs_coef <- colMeans(abs(x$beta), na.rm = TRUE)

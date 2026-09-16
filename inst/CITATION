@@ -8,11 +8,11 @@ bibentry(
   ),
   year = "2026",
   note = "R package version 0.99.0",
-  url = "https://github.com/gbarturen/anchorCorrectR",
+  url = "https://github.com/bioinfoUGR/AnchorCorrectR",
   textVersion = paste(
     "Rivas-Torrubia M, Brescia-Zapata A, Barturen G (2026).",
     "anchorCorrectR: Anchor-Based Batch Correction for Gene Expression Data.",
     "R package version 0.99.0.",
-    "https://github.com/gbarturen/anchorCorrectR"
+    "https://github.com/bioinfoUGR/AnchorCorrectR"
   )
 )

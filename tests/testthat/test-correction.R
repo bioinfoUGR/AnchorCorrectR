@@ -75,3 +75,38 @@ test_that("combat correction returns finite matrix", {
   expect_equal(dim(out), dim(sim$counts))
   expect_true(all(is.finite(out)))
 })
+
+test_that("ebayes location keeps more signal with more anchors", {
+  set.seed(1)
+  gamma <- cbind(rnorm(200, 0.8, 0.2), rnorm(200, -0.8, 0.2))
+  n_few <- matrix(2, nrow = 200, ncol = 2)
+  n_many <- matrix(30, nrow = 200, ncol = 2)
+  g_few <- anchorCorrectR:::.ebayes_shrink_location(gamma, n_few, verbose = FALSE)
+  g_many <- anchorCorrectR:::.ebayes_shrink_location(gamma, n_many, verbose = FALSE)
+  # More anchors => less shrinkage toward 0
+  expect_gt(mean(abs(g_many)), mean(abs(g_few)))
+  # With many anchors, posterior should stay close to the raw estimate (~ n/(n+1))
+  expect_gt(mean(abs(g_many) / pmax(abs(gamma), 1e-8)), 0.9)
+  expect_lt(mean(abs(g_few) / pmax(abs(gamma), 1e-8)), 0.8)
+})
+
+test_that("combat reduces batch mean differences with many anchors", {
+  set.seed(2)
+  sim <- helper_simulate_batches(n_genes = 120, n_per_batch = 20, n_batches = 2)
+  tf <- anchorCorrectR:::make_transform_cpm_log1p(sim$counts, input_type = "counts")
+  before <- tf$forward(sim$counts)
+  out <- correct_combat_anchor(
+    sim$counts, sim$batch, sim$sample_id,
+    input_type = "counts", ref_batch = "B1",
+    verbose = FALSE, round_counts = FALSE
+  )
+  after <- tf$forward(out)
+  batch_gap <- function(X, batch) {
+    lev <- levels(batch)
+    mean(abs(
+      rowMeans(X[, batch == lev[1], drop = FALSE]) -
+        rowMeans(X[, batch == lev[2], drop = FALSE])
+    ))
+  }
+  expect_lt(batch_gap(after, sim$batch), 0.25 * batch_gap(before, sim$batch))
+})

@@ -19,7 +19,7 @@ fit_anchor_ridge(
 
 \item{batch}{factor of batch labels}
 
-\item{sample_id}{factor of sample identifiers (anchors span multiple batches)}
+\item{sample_id}{factor of sample identifiers (IDs in >=2 batches are anchors)}
 
 \item{lambda}{optional pre-specified lambda; if NULL, estimated via CV}
 
@@ -37,18 +37,21 @@ object of class "anchor_ridge_fit" with components:
 \item lambda: regularization parameter used
 \item gene_mean: vector of gene means (for unstandardization)
 \item gene_sd: vector of gene standard deviations (for unstandardization)
+\item n_anchors: number of anchor observations used for fitting
+\item anchor_ids: character vector of anchor sample IDs
 }
 }
 \description{
-Uses glmnet with alpha=0 (ridge penalty) to estimate per-gene batch effects.
-A common lambda is chosen via cross-validation on a random subset of genes,
-then applied to all genes for consistency.
+Uses glmnet with alpha=0 (ridge penalty) to estimate per-gene batch effects
+\strong{using only anchor observations} (sample IDs present in at least two
+batches). A common lambda is chosen via cross-validation on a random subset
+of genes, then applied to all genes for consistency.
 }
 \details{
-Data are standardized (mean=0, variance=1 per gene) before fitting to ensure
-consistent lambda selection and balanced regularization across genes with
-different scales. Standardization parameters are stored and used during
-correction application.
+Data are standardized (mean=0, variance=1 per gene) on the full matrix before
+fitting so apply-time unstandardization matches all samples; the regression
+itself is restricted to anchor columns so non-anchor biology cannot leak into
+batch coefficients.
 }
 \examples{
 \dontrun{
@@ -58,7 +61,7 @@ Xlog <- matrix(rnorm(1000 * 30, mean = 5, sd = 2), nrow = 1000)
 batch <- factor(rep(c("A", "B", "C"), each = 10))
 sample_id <- factor(rep(1:10, 3))
 
-# Fit ridge model
+# Fit ridge model (anchors only)
 fit <- fit_anchor_ridge(Xlog, batch, sample_id)
 print(dim(fit$beta))
 }

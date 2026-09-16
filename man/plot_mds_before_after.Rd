@@ -12,7 +12,8 @@ plot_mds_before_after(
   input_type = c("auto", "counts", "log"),
   distance = c("euclidean", "1-corr"),
   k = 2,
-  same_limits = TRUE
+  same_limits = TRUE,
+  title = "MDS before vs after"
 )
 }
 \arguments{
@@ -31,6 +32,8 @@ plot_mds_before_after(
 \item{k}{Integer, MDS dimensions to compute (2 recommended for plotting).}
 
 \item{same_limits}{Logical; enforce the same x/y limits across both panels (default TRUE).}
+
+\item{title}{Overall plot title (default \code{"MDS before vs after"}).}
 }
 \value{
 A ggplot object (if ggplot2 is installed) or \code{NULL} (after drawing base plots).

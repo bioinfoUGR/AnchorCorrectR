@@ -52,7 +52,8 @@ if (!requireNamespace("BiocManager", quietly = TRUE)) {
 # BiocManager::install("anchorCorrectR")
 
 # From GitHub during development:
-# BiocManager::install("gbarturen/anchorCorrectR")
+# BiocManager::install("bioinfoUGR/AnchorCorrectR")
+# remotes::install_github("bioinfoUGR/AnchorCorrectR")
 ```
 
 ```{r load}
