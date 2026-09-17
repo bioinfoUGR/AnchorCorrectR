@@ -19,167 +19,209 @@ vignette: >
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>",
-  fig.width = 6,
-  fig.height = 4
+  fig.width = 8,
+  fig.height = 4,
+  dpi = 96
 )
+has_glmnet <- requireNamespace("glmnet", quietly = TRUE)
+has_ggplot2 <- requireNamespace("ggplot2", quietly = TRUE)
 ```
 
 # Introduction
 
-Technical batch effects are common in multi-batch RNA-seq and microarray
-studies. When the same biological samples (anchors) are profiled in more than
-one batch, those replicates provide a direct estimate of technical shift.
+Technical batch effects are common in multi-batch RNA-seq studies. When the
+same biological samples (**anchors**) are profiled in more than one batch,
+those replicates provide a direct estimate of technical shift.
 
-**anchorCorrectR** uses such anchors to correct gene-expression matrices with:
+**anchorCorrectR** estimates batch effects from anchors and corrects
+gene-expression matrices with:
 
 - **Location shift** (`method = "shift"`): mean- or median-based offsets
 - **Ridge regression** (`method = "ridge"`): regularized batch coefficients
-- **Anchor-aware ComBat** (`method = "combat"`): location/scale with empirical Bayes shrinkage
+  fitted on anchors only
+- **Anchor-aware ComBat** (`method = "combat"`): location/scale with empirical
+  Bayes shrinkage
 
-Related Bioconductor / CRAN tools include `sva::ComBat`,
-`limma::removeBatchEffect`, and `batchelor`. Those methods typically estimate
-batch effects from all samples in a batch. anchorCorrectR instead estimates
-effects from cross-batch replicates, which is useful when biology and batch are
-partially confounded.
-
-# Installation
-
-```{r install, eval=FALSE}
-if (!requireNamespace("BiocManager", quietly = TRUE)) {
-  install.packages("BiocManager")
-}
-# After Bioconductor acceptance:
-# BiocManager::install("anchorCorrectR")
-
-# From GitHub during development:
-# BiocManager::install("bioinfoUGR/AnchorCorrectR")
-# remotes::install_github("bioinfoUGR/AnchorCorrectR")
-```
+This vignette follows the worked **SEQC / GSE47774** example from the package
+README: platform is the batch, Sample (A/B/C/D) is biology, and cross-platform
+C/D IDRs are anchors. Full scenario tables, ComBat-seq comparisons, and QC
+examples live in the [GitHub README](https://github.com/bioinfoUGR/AnchorCorrectR).
 
 ```{r load}
 library(anchorCorrectR)
 ```
 
-# Simulated multi-batch experiment
+# Load the SEQC example
 
-```{r simulate}
+Bundled counts and metadata are in `inst/extdata/`:
+
+```{r load-data}
+counts <- as.matrix(read.delim(
+  system.file("extdata", "counts.tsv.gz", package = "anchorCorrectR"),
+  row.names = 1, check.names = FALSE
+))
+meta <- read.delim(
+  system.file("extdata", "metadata.tsv.gz", package = "anchorCorrectR"),
+  check.names = FALSE
+)
+stopifnot(identical(colnames(counts), meta$ID))
+
+dim(counts)
+table(meta$Platform, meta$Sample)
+```
+
+| Column | Role |
+|--------|------|
+| `Platform` | Batch (`ILLUMINA` vs `ABI_SOLID`) |
+| `Sample` | Biology (`A`, `B`, `C`, `D`) |
+| `IDR` | Replicate ID (C/D on both platforms → anchors) |
+| `ID` | GEO accession (= count matrix columns) |
+
+# Design: 5 C/D anchors + balanced A/B
+
+Keep five cross-platform C/D anchors and 30 A/B libraries with roughly even
+platform balance (`scenario = "balanced"`). A/B libraries are **not** anchors,
+so `assess_correction()` can still compute PCA-based metrics after excluding
+replicate C/D samples.
+
+```{r design}
 set.seed(123)
-n_genes <- 200
-n_per_batch <- 10
-n_batches <- 3
 
-sample_id <- factor(rep(seq_len(n_per_batch), times = n_batches))
-batch <- factor(rep(paste0("Batch", seq_len(n_batches)), each = n_per_batch))
-biology <- factor(rep(rep(c("GroupA", "GroupB"), each = n_per_batch / 2),
-                      times = n_batches))
+cd <- meta[meta$Sample %in% c("C", "D"), ]
+cd_anchor_ids <- names(which(tapply(cd$Platform, cd$IDR, function(z) {
+  all(c("ILLUMINA", "ABI_SOLID") %in% z)
+})))
+keep_idr <- sample(cd_anchor_ids, 5)
+meta_cd <- cd[cd$IDR %in% keep_idr, ]
+keep_idr
 
-counts <- matrix(
-  rpois(n_genes * length(sample_id), lambda = 80),
-  nrow = n_genes,
-  dimnames = list(
-    paste0("Gene", seq_len(n_genes)),
-    paste0("S", seq_along(sample_id))
-  )
-)
+pick_ab <- function(meta_ab, sample_label, n_ilm, n_solid) {
+  ilm <- meta_ab$ID[meta_ab$Sample == sample_label &
+                      meta_ab$Platform == "ILLUMINA"]
+  sol <- meta_ab$ID[meta_ab$Sample == sample_label &
+                      meta_ab$Platform == "ABI_SOLID"]
+  c(sample(ilm, n_ilm), sample(sol, n_solid))
+}
 
-# Artificial multiplicative batch effects
-batch_mult <- c(Batch1 = 1.0, Batch2 = 1.7, Batch3 = 0.65)
-counts <- sweep(counts, 2, batch_mult[as.character(batch)], `*`)
+ab <- meta[meta$Sample %in% c("A", "B"), ]
+ids_ab <- c(pick_ab(ab, "A", 8, 7), pick_ab(ab, "B", 8, 7))
+
+meta_use <- rbind(meta_cd, ab[ab$ID %in% ids_ab, ])
+meta_use <- meta_use[match(intersect(meta_use$ID, colnames(counts)),
+                           meta_use$ID), ]
+counts_use <- counts[, meta_use$ID, drop = FALSE]
+
+batch     <- factor(meta_use$Platform)
+biology   <- factor(meta_use$Sample)
+sample_id <- factor(meta_use$IDR)
+
+table(batch, biology)
 ```
 
-# Location-shift correction
+Other README scenarios (`mild`, `strong`, `confounded`) only change the A/B
+platform counts inside `pick_ab()`.
 
-```{r shift}
-corrected_mean <- anchor_correct(
-  counts, batch, sample_id,
-  method = "shift",
-  center = "mean",
-  input_type = "counts",
+# Correct with shift and anchor-aware ComBat
+
+```{r correct}
+out_shift <- anchor_correct(
+  counts_use, batch, sample_id,
+  method = "shift", center = "mean",
+  input_type = "counts", ref_batch = "ILLUMINA",
   verbose = FALSE
 )
 
-corrected_median <- anchor_correct(
-  counts, batch, sample_id,
-  method = "shift",
-  center = "median",
-  input_type = "counts",
-  verbose = FALSE
-)
-
-dim(corrected_mean)
-```
-
-Use `center = "median"` when a few anchors may be unreliable. Optionally keep
-one batch unchanged with `ref_batch`.
-
-```{r ref-batch}
-corrected_ref <- anchor_correct(
-  counts, batch, sample_id,
-  method = "shift",
-  center = "mean",
-  ref_batch = "Batch1",
-  input_type = "counts",
-  verbose = FALSE
-)
-```
-
-# Anchor-aware ComBat
-
-```{r combat}
-corrected_combat <- anchor_correct(
-  counts, batch, sample_id,
+out_combat <- anchor_correct(
+  counts_use, batch, sample_id,
   method = "combat",
-  input_type = "counts",
+  input_type = "counts", ref_batch = "ILLUMINA",
+  verbose = FALSE
+)
+
+dim(out_shift)
+```
+
+Use `center = "median"` when anchors may be noisy. Optional `ref_batch` leaves
+one platform uncorrected (here Illumina).
+
+```{r ridge, eval=has_glmnet}
+out_ridge <- anchor_correct(
+  counts_use, batch, sample_id,
+  method = "ridge",
+  input_type = "counts", ref_batch = "ILLUMINA",
   verbose = FALSE
 )
 ```
 
-# Assessing correction
+```{r ridge-skip, eval=!has_glmnet, results='asis'}
+cat("_Skipping ridge: install Suggested package `glmnet` to run this chunk._\n")
+```
+
+# Assess and compare methods
+
+`assess_correction()` reports PVCA batch/biology variance, anchor RMSE, kNN
+Jaccard, HVG overlap, and clustering concordance. With `sample_id` set, C/D
+anchors are excluded from PCA-based metrics (A/B remain) but still used for
+RMSE.
 
 ```{r assess}
-assessment <- assess_correction(
-  x_before = counts,
-  x_after = corrected_mean,
-  batch = batch,
-  biology = biology,
-  sample_id = sample_id,
-  input_type = "counts",
-  verbose = FALSE
+a_shift <- assess_correction(
+  counts_use, out_shift, batch, biology, sample_id,
+  input_type = "counts", verbose = FALSE
 )
-print(assessment)
+a_combat <- assess_correction(
+  counts_use, out_combat, batch, biology, sample_id,
+  input_type = "counts", verbose = FALSE
+)
 ```
 
-MDS before versus after correction:
+```{r merge-shift-combat, eval=!has_glmnet}
+merged <- merge_assessments(
+  a_shift, a_combat,
+  run_names = c("shift", "combat")
+)
+merged$consolidated_table
+```
 
-```{r mds, fig.cap="MDS of samples before and after shift correction."}
+```{r merge-with-ridge, eval=has_glmnet}
+a_ridge <- assess_correction(
+  counts_use, out_ridge, batch, biology, sample_id,
+  input_type = "counts", verbose = FALSE
+)
+merged <- merge_assessments(
+  a_shift, a_ridge, a_combat,
+  run_names = c("shift", "ridge", "combat")
+)
+merged$consolidated_table
+```
+
+On this balanced SEQC subset, all package methods reduce platform variance and
+roughly halve C/D anchor RMSE while raising biology variance. For imbalance /
+confounding designs and an `sva::ComBat_seq` baseline, see the README.
+
+# MDS before / after
+
+```{r mds, eval=has_ggplot2, fig.cap="MDS of SEQC samples before and after mean-shift correction (balanced design). Color = platform; shape = Sample."}
 plot_mds_before_after(
-  x_before = counts,
-  x_after = corrected_mean,
-  batch = batch,
-  biology = biology,
-  input_type = "counts"
+  counts_use, out_shift, batch, biology,
+  input_type = "counts",
+  title = "MDS before vs after — shift · balanced"
 )
 ```
 
-# Working with matrix inputs
-
-anchorCorrectR expects a numeric **genes × samples** matrix. For
-`SummarizedExperiment` / `SingleCellExperiment` objects, extract the assay and
-metadata columns, then correct:
-
-```{r se-pattern, eval=FALSE}
-# library(SummarizedExperiment)
-# se <- ...
-# corrected <- anchor_correct(
-#   assay(se, "counts"),
-#   batch = colData(se)$batch,
-#   sample_id = colData(se)$sample_id,
-#   method = "shift",
-#   center = "mean",
-#   input_type = "counts"
-# )
-# assay(se, "corrected") <- corrected
+```{r mds-skip, eval=!has_ggplot2, results='asis'}
+cat("_Skipping MDS plot: install Suggested package `ggplot2`._\n")
 ```
+
+# Notes
+
+- Input must be a numeric **genes × samples** matrix (`input_type = "counts"`
+  or `"log"`).
+- For `SummarizedExperiment` objects, extract `assay()` / `colData()` columns
+  and pass them to `anchor_correct()`.
+- Extended QC helpers (`detect_outliers_pca_mds()`, `detect_sex_mismatch()`,
+  `vcf_compare_fast()`, `generate_bootstrap_fastq()`) are documented in the
+  README with PRECISESADS cohort examples.
 
 # Session info
 
