@@ -72,9 +72,7 @@ corrected <- anchor_correct(
 | `ID`       | GEO accession (= count matrix columns)             |
 
 
-Default design: **5** cross-platform C/D IDRs (10 libraries) + **30** A/B
-libraries. Change `scenario` for A/B platform balance, or the replicate
-section below for 2 / 3 / 5 / 10 IDRs.
+Default design: **5** cross-platform C/D IDRs (10 libraries) + **30** A/B libraries. Change `scenario` for A/B platform balance, or the replicate section below for 2 / 3 / 5 / 10 IDRs.
 
 ### Load, correct, assess
 
@@ -163,10 +161,9 @@ plot_mds_before_after(counts_use, out_shift, batch, biology, input_type = "count
 
 
 
-### Results (5 anchors)
+### Results (with 5 anchors)
 
-`set.seed(123)` → anchors **C9, D12, C8, C11, C4**. Values from
-`assess_correction()` on log1p-CPM.
+`set.seed(123)` → anchors **C9, D12, C8, C11, C4**. Values from `assess_correction()` on log1p-CPM.
 
 
 | Scenario   | Method              | Batch before → after | Biology before → after | RMSE before → after | kNN   | HVG   |
@@ -189,21 +186,11 @@ plot_mds_before_after(counts_use, out_shift, batch, biology, input_type = "count
 | confounded | ComBat_seq          | 0.705 → 0.696        | 0.705 → 0.696          | 0.594 → **0.285**   | 0.837 | 0.764 |
 
 
-- **Balanced / mild:** all methods cut batch variance; `ComBat_seq` strongest on
-batch but lowest kNN Jaccard.
-- **Strong:** anchor methods raise biology variance; `ComBat_seq` drops it
-(0.721 → 0.666).
+- **Balanced / mild:** all methods cut batch variance; `ComBat_seq` strongest on batch but lowest kNN Jaccard.
+- **Strong:** anchor methods raise biology variance; `ComBat_seq` drops it (0.721 → 0.666).
 - **Confounded:** PVCA stuck (~0.70) for everyone; C/D RMSE still improves.
 
-
-
-### MDS (color = platform, shape = Sample)
-
-Each figure has an overall title and **before** / **after** panel titles.
-Plot styling matches the extended QC utilities (`theme_bw`, light grid,
-`skyblue4`/`tomato3`-style discrete colors, point size 2.5 / alpha 0.7).
-
-**Balanced**
+### Balanced graphical example with 5 anchors
 
 ![MDS balanced shift](man/figures/readme/mds_balanced_shift.png)
 
@@ -213,24 +200,9 @@ Plot styling matches the extended QC utilities (`theme_bw`, light grid,
 
 ![MDS balanced ComBat_seq](man/figures/readme/mds_balanced_combatseq.png)
 
-**Strong (shift vs ComBat_seq)**
-
-![MDS strong shift](man/figures/readme/mds_strong_shift.png)
-
-![MDS strong ComBat_seq](man/figures/readme/mds_strong_combatseq.png)
-
-**Confounded (shift, ridge, ComBat_seq)**
-
-![MDS confounded shift](man/figures/readme/mds_confounded_shift.png)
-
-![MDS confounded ridge](man/figures/readme/mds_confounded_ridge.png)
-
-![MDS confounded ComBat_seq](man/figures/readme/mds_confounded_combatseq.png)
-
 ### Number of replicates (strong imbalance)
 
-**n = number of cross-platform replicates** (not libraries). Nested C/D pools
-(`set.seed(123)`): C `C9,C11,C8,C4,C10`, D `D14,D5,D13,D12,D9`.
+**n = number of cross-platform replicates** (not libraries). Nested C/D pools (`set.seed(123)`): C `C9,C11,C8,C4,C10`, D `D14,D5,D13,D12,D9`.
 
 
 | n     | Composition | Libraries |
@@ -275,9 +247,7 @@ keep_idr <- c(c_ids[seq_len(n_c)], d_ids[seq_len(n_d)])  # n=2 -> 1C+1D
 
 ![Strong imbalance: effect of number of technical replicates](man/figures/readme/nreplicates_strong_trends.png)
 
-At **n = 2 (1C+1D)** ridge is weak and `ComBat_seq` collapses biology
-(0.704 → 0.436); shift / anchor-aware ComBat remain stable. By **n = 10** the three anchor
-methods converge.
+At **n = 2 (1C+1D)** ridge is weak, and `ComBat_seq` collapses biology (0.704 → 0.436); shift / anchor-aware ComBat remain stable. By **n = 10** the three anchor methods converge; however, `ComBat_seq` still appears to overcorrect batch effect at the expense of reducing the confounded biology variance.
 
 **anchor-aware ComBat vs ComBat_seq at n = 2** (overall title + per-panel titles):
 
@@ -293,7 +263,7 @@ data in the input scale. Optional `ref_batch` leaves one batch unchanged.
 | ------------ | ------------------------------------------------- | --------------------------------------------------------------- |
 | `"shift"`    | `correct_shift()`                                 | Location offsets from anchors (`center = "mean"` / `"median"`)  |
 | `"ridge"`    | `fit_anchor_ridge()` / `apply_correction_ridge()` | Ridge on batch dummies, **anchors only**                        |
-| `"combat"`   | `correct_combat_anchor()`                         | **anchor-aware ComBat** (EB shrinkage; not original ComBat)     |
+| `"combat"`   | `correct_combat_anchor()`                         | **anchor-aware ComBat** (EB shrinkage)                          |
 | *(external)* | `sva::ComBat_seq()`                               | Original ComBat-seq for counts; pass `group` to protect biology |
 
 
